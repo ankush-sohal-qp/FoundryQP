@@ -1,0 +1,103 @@
+# {{APP_NAME}} — the app-team's actual deliverable: image + config. Everything else is platform.
+# TEMPLATE: filled by new-app.sh. The app-team only ever supplies these few values:
+#   APP_NAME, IMAGE, PORT, REPLICAS, CPU_REQUEST, MEM_REQUEST, INGRESS_HOST.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{APP_NAME}}
+  namespace: {{APP_NAME}}
+  labels:
+    app: {{APP_NAME}}
+spec:
+  replicas: {{REPLICAS}}                # >=2 in prod (node-level HA + something for HPA to scale)
+  selector:
+    matchLabels:
+      app: {{APP_NAME}}
+  template:
+    metadata:
+      labels:
+        app: {{APP_NAME}}
+    spec:
+      # Pull secret for private OCIR images. new-app.sh leaves this commented when the image
+      # is public; uncomments + fills it when --pull-secret is given (created out-of-band, B-plan).
+      {{IMAGE_PULL_SECRETS}}
+      # spread replicas across nodes — a node dies, the app survives
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: {{APP_NAME}}
+      containers:
+        - name: app
+          image: {{IMAGE}}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{PORT}}
+          # baseline hardening safe for any image: no priv-escalation, drop caps, default seccomp.
+          # (runAsNonRoot/readOnlyRootFilesystem need a non-root image rebuild — roadmap.)
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          envFrom:
+            - secretRef:
+                name: {{APP_NAME}}-env       # all config/secrets injected from this Secret
+          # readiness: gates traffic — only Ready when the app's own health endpoint passes (incl. DB).
+          readinessProbe:
+            httpGet:
+              path: {{HEALTH_PATH}}
+              port: {{PORT}}
+            initialDelaySeconds: {{READINESS_DELAY}}   # higher for DB-dependent apps (boot + DB connect)
+            periodSeconds: 10
+            failureThreshold: 6
+          # liveness: restarts a WEDGED process only — a TCP connect, deliberately NOT the DB health
+          # route (a DB outage must not restart-loop every pod).
+          livenessProbe:
+            tcpSocket:
+              port: {{PORT}}
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: {{CPU_REQUEST}}           # guaranteed slice — scheduler packs on this
+              memory: {{MEM_REQUEST}}
+            limits:
+              # NO cpu limit on purpose (trusted internal app): a CPU limit throttles even when the
+              # node has idle CPU, hurting bursts + the HPA ramp. The request already guarantees
+              # fairness. Keep a CPU limit only for untrusted/multi-tenant workloads.
+              memory: {{MEM_LIMIT}}          # memory limit STAYS — OOM guard (memory is incompressible)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{APP_NAME}}
+  namespace: {{APP_NAME}}
+  # SERVICE_TYPE=LoadBalancer => these OCI NLB annotations + externalTrafficPolicy: Local apply
+  # (direct public NLB, zero-downtime-on-VM-death, like synthetic-data). SERVICE_TYPE=ClusterIP
+  # => the annotations are inert and the app is reached via the shared nginx Ingress below.
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: "nlb"
+    # let OKE's CCM auto-write the worker-subnet security rules (None => you hand-maintain, error-prone)
+    oci-network-load-balancer.oraclecloud.com/security-list-management-mode: "All"
+    # fast failure detection on VM death — dead backend evicted in ~2-3s (defaults take ~30s)
+    oci-network-load-balancer.oraclecloud.com/health-check-interval: "1000"   # ms (1000 = NLB minimum)
+    oci-network-load-balancer.oraclecloud.com/health-check-timeout: "1000"    # ms
+    oci-network-load-balancer.oraclecloud.com/health-check-retries: "2"       # 2 fails => out in ~2-3s
+spec:
+  type: {{SERVICE_TYPE}}
+  selector:
+    app: {{APP_NAME}}
+  # Local => traffic only to nodes running a pod, probes pod readiness (not node-wide :10256) =>
+  # near zero-downtime on VM death. new-app.sh sets this only for SERVICE_TYPE=LoadBalancer
+  # (it is INVALID on a ClusterIP Service).
+  {{TRAFFIC_POLICY}}
+  ports:
+    - port: 80
+      targetPort: {{PORT}}
+{{INGRESS_BLOCK}}

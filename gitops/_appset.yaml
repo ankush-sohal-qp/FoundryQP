@@ -1,0 +1,49 @@
+# ApplicationSet — the self-service spine. Auto-discovers every app under gitops/*/ and
+# creates a matching ArgoCD Application for it. An app-team's entire onboarding becomes:
+#   1. run new-app.sh (renders manifests straight into gitops/<app>/)
+#   2. git push
+# ...and THIS controller notices the new folder, spins up the Application, and deploys it.
+# No human ever runs `argocd app create` or `kubectl apply`. git push == live.
+#
+# Lives in argocd namespace. The leading underscore on the filename keeps it sorted before
+# the app folders and signals "this is platform plumbing, not an app".
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    # Git directory generator: one entry per immediate subfolder of gitops/.
+    # The exclude keeps platform plumbing (folders starting with _) from being treated as apps.
+    - git:
+        repoURL: https://github.com/ankush-sohal-qp/FoundryQP.git
+        revision: HEAD
+        directories:
+          - path: gitops/*
+          - path: gitops/_*
+            exclude: true
+  template:
+    metadata:
+      # {{.path.basename}} = the folder name = the app name (e.g. synthetic-data)
+      name: "{{.path.basename}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ankush-sohal-qp/FoundryQP.git
+        targetRevision: HEAD
+        path: "{{.path.path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        # namespace per app == folder name. App manifests still declare their own namespace;
+        # this is the default for any namespaced resource that omits one.
+        namespace: "{{.path.basename}}"
+      syncPolicy:
+        automated:
+          prune: true        # delete resources removed from git
+          selfHeal: true     # revert manual drift back to git state
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

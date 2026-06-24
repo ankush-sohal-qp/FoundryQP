@@ -1,0 +1,44 @@
+# NetworkPolicy = a firewall in front of pods. Without it, ANY pod in the cluster can reach the DB.
+# Locks Postgres + Redis so ONLY synthetic-data app pods can connect.
+# K8s equivalent of "DB on a private subnet, only the app tier may talk to it."
+# TEMPLATE: filled by new-app.sh.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-app-only
+  namespace: synthetic-data
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-data      # only this app's pods allowed in
+      ports:
+        - protocol: TCP
+          port: 5433
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow-app-only
+  namespace: synthetic-data
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-data
+      ports:
+        - protocol: TCP
+          port: 6379

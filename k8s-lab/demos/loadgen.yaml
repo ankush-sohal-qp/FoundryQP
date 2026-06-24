@@ -1,0 +1,51 @@
+# DEMO PROP — in-cluster load generator to trigger the HPA live. NOT part of the platform.
+#
+# Pairs with ../platform/10-hpa-autoscale.yaml. Apply this to drive synthetic-data's CPU up so the
+# HPA scales out (watch on Grafana "Running app pods"). Scale to 0 (or delete) to stop the load.
+#
+#   kubectl apply -f demos/loadgen.yaml                          # start load (2 replicas)
+#   kubectl -n synthetic-data get hpa synthetic-data -w          # watch REPLICAS climb 2 -> 4
+#   kubectl -n synthetic-data scale deploy loadgen --replicas=0  # stop; HPA shrinks back ~30-60s later
+#   kubectl delete -f demos/loadgen.yaml                         # remove the prop entirely
+#
+# A REAL Deployment (NOT `kubectl run ... -- while...`, which exits immediately). Each replica runs
+# 8 parallel infinite wget loops against the app health endpoint, burning app CPU.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: synthetic-data
+  labels:
+    app: loadgen
+spec:
+  replicas: 2        # 2 loadgen replicas cleanly fills 4 app pods (1 was too weak → stalled at 3; 3 ran hot)
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: busybox:1.36
+          resources:
+            requests:
+              cpu: 50m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 32Mi
+          # 8 parallel infinite wget loops against the app health endpoint — keeps app CPU pinned.
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              URL=http://synthetic-data.synthetic-data.svc.cluster.local/synthetic-data/api/health;
+              i=0;
+              while [ $i -lt 8 ]; do
+                ( while true; do wget -q -O /dev/null --timeout=2 "$URL" 2>/dev/null; done ) &
+                i=$((i+1));
+              done;
+              wait

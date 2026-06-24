@@ -1,0 +1,9 @@
+# A namespace = one team's isolated "home" on the shared platform.
+# This is the self-service unit: the app-team owns this namespace; the platform-team owns the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synthetic-data
+  labels:
+    team: synthetic-data
+    tier: backend

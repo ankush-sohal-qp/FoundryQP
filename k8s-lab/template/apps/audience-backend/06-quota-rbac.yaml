@@ -1,0 +1,60 @@
+# Self-service guardrails for audience-backend's namespace.
+# ResourceQuota = hard cap (one team can't starve the cluster). LimitRange = per-pod defaults.
+# Role + RoleBinding = the team manages THEIR namespace, nothing else.
+# TEMPLATE: filled by new-app.sh. 200m/512Mi come from the app's sizing.
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: audience-backend-quota
+  namespace: audience-backend
+spec:
+  hard:
+    requests.cpu: "2"        # total CPU this namespace may request
+    requests.memory: 3Gi
+    limits.memory: 8Gi          # memory is capped (incompressible); CPU intentionally not limited per-pod
+    pods: "20"                                # runaway protection
+    persistentvolumeclaims: "5"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: audience-backend-limits
+  namespace: audience-backend
+spec:
+  limits:
+    - type: Container
+      defaultRequest:                         # if a container sets no request, use the app's sizing
+        cpu: 200m
+        memory: 512Mi
+      default:                                # memory limit default (OOM guard); no default CPU limit
+        memory: 512Mi
+---
+# RBAC: a role that can manage workloads INSIDE this namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: audience-backend-developer
+  namespace: audience-backend
+rules:
+  - apiGroups: ["", "apps", "batch", "networking.k8s.io"]
+    resources:
+      ["deployments", "replicasets", "pods", "services", "ingresses",
+       "configmaps", "secrets", "jobs", "cronjobs", "statefulsets",
+       "persistentvolumeclaims", "pods/log", "pods/exec"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# Bind that role to the team's group (maps to your SSO/OIDC group in real life).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: audience-backend-team-binding
+  namespace: audience-backend
+subjects:
+  - kind: Group
+    name: audience-team                            # whoever is in this group gets developer access, scoped to this ns
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: audience-backend-developer
+  apiGroup: rbac.authorization.k8s.io

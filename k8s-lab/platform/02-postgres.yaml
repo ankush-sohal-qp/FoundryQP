@@ -1,0 +1,83 @@
+# Postgres (pgvector) for synthetic-data.
+# StatefulSet (not Deployment) because a database is a PET, not cattle: stable identity + stable storage.
+# PVC keeps data across pod restarts. In the real fleet this maps to the separate encrypted block volume.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres            # <-- app connects via this DNS name: DATABASE_DEFAULT_HOST=postgres
+  namespace: synthetic-data
+spec:
+  clusterIP: None           # headless service — stable network identity for the StatefulSet
+  selector:
+    app: postgres
+  ports:
+    - port: 5433          # match local dev (Ankush runs Postgres on 5433)
+      targetPort: 5433
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: synthetic-data
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          args: ["postgres", "-c", "shared_preload_libraries=vector", "-p", "5433"]
+          ports:
+            - containerPort: 5433
+          env:
+            # Credentials come from the postgres-creds Secret, NOT hardcoded here.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_DB
+            - name: PGPORT
+              value: "5433"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "synthetic_data_user", "-d", "synthetic_data_main_db", "-p", "5433"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

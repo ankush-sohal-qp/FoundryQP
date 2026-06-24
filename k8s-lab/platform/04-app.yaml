@@ -1,0 +1,109 @@
+# synthetic-data app: the real backend image, configured entirely from the Secret.
+# This is the "app-team's deliverable": image + config. Everything else (heal/scale/route) is platform.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synthetic-data
+  namespace: synthetic-data
+  labels:
+    app: synthetic-data
+spec:
+  replicas: 2                       # 2 replicas => node-level HA + something for HPA to scale
+  selector:
+    matchLabels:
+      app: synthetic-data
+  template:
+    metadata:
+      labels:
+        app: synthetic-data
+    spec:
+      # spread replicas across different nodes — don't put both on one node (HA)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: synthetic-data
+      containers:
+        - name: app
+          image: localhost:5000/synthetic-data:v1   # in-cluster registry; every node's registry-proxy serves localhost:5000
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          # Baseline hardening that is SAFE for this image as-is: block setuid privilege escalation,
+          # drop all Linux capabilities, apply the default seccomp filter.
+          # NOT enabled (would need an image rebuild — verified the container currently runs as UID 0
+          # and writes to /): runAsNonRoot / runAsUser, readOnlyRootFilesystem. Those are the real
+          # production hardening step — build the image with a non-root user and a writable /tmp volume.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          envFrom:
+            - secretRef:
+                name: synthetic-data-env   # all config/secrets injected here
+          # readiness: gates traffic. Health check hits DB (SELECT NOW()) — only Ready when DB is reachable.
+          readinessProbe:
+            httpGet:
+              path: /synthetic-data/api/health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          # liveness: restarts a WEDGED PROCESS only — deliberately does NOT check the DB.
+          # A TCP connect to the app port proves the Node process is up and accepting sockets.
+          # If liveness hit the DB health route (like readiness does), a DB outage would fail
+          # liveness on every pod and Kubernetes would restart-loop the whole app while the DB
+          # is the actual problem — making an outage worse. Readiness handles the DB dependency
+          # (gates traffic); liveness only answers "is the process alive?".
+          livenessProbe:
+            tcpSocket:
+              port: 3001
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 150m          # guaranteed slice — the scheduler packs on this; no neighbour can take it
+              memory: 256Mi
+            limits:
+              # NO cpu limit on purpose: this is a trusted internal app. A CPU limit would THROTTLE
+              # the pod even when the node has idle CPU — hurting bursts and the window while the HPA
+              # adds capacity. The CPU *request* already guarantees fairness, so dropping the limit
+              # lets the app burst into spare CPU. (Keep a CPU limit only for untrusted/multi-tenant.)
+              memory: 768Mi      # memory limit STAYS — OOM guard; memory is incompressible, must be capped
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: synthetic-data
+  namespace: synthetic-data
+spec:
+  selector:
+    app: synthetic-data
+  ports:
+    - port: 80
+      targetPort: 3001
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: synthetic-data
+  namespace: synthetic-data
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: synthetic.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: synthetic-data
+                port:
+                  number: 80

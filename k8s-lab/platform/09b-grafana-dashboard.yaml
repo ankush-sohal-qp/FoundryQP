@@ -1,0 +1,237 @@
+# Grafana dashboard, provisioned as a ConfigMap so it's recreated on a fresh cluster
+# (fixes the gap where the dashboard existed only live).
+# Apply this file explicitly: `kubectl apply -f platform/09b-grafana-dashboard.yaml`.
+# Do NOT run a bare `kubectl apply -f platform/` — this dir also holds dashboard.json (a source
+# artifact, not a K8s object), which a directory-apply would choke on.
+#
+# IMPORTANT: the value under `synthetic-data.json` is the RAW INNER dashboard object
+# (starts with "id"/"uid"/"title") — NOT the {"dashboard": {...}} API wrapper. Grafana's
+# FILE provisioning (see 09-grafana.yaml's dashboard-provider) loads the inner object directly;
+# the wrapper is only for the HTTP API and would make the panels fail to load.
+#
+# Source of truth is platform/dashboard.json. After editing the dashboard in the Grafana UI,
+# re-sync both files with: ./platform/sync-dashboard.sh
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-synthetic
+  namespace: monitoring
+data:
+  synthetic-data.json: |
+    {
+      "id": null,
+      "uid": "synthetic-data-platform",
+      "title": "Synthetic Data Platform \u2014 Live",
+      "tags": [
+        "synthetic-data",
+        "platform"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 0,
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "App \u2014 Resident Memory per Pod",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "process_resident_memory_bytes{job=\"synthetic-data-app\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "App \u2014 Node.js Heap Used",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "nodejs_heap_size_used_bytes{job=\"synthetic-data-app\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Pod CPU usage (cores) \u2014 synthetic-data ns",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"synthetic-data\", pod!=\"\"}[2m]))",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Pod memory working set \u2014 synthetic-data ns",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"synthetic-data\", pod!=\"\"})",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Running app pods (HPA scaling visible here)",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "count(process_resident_memory_bytes{job=\"synthetic-data-app\"})",
+              "legendFormat": "app pods"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Node CPU usage (cores) per node",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus-ds"
+              },
+              "expr": "sum by (instance) (rate(container_cpu_usage_seconds_total{id=\"/\"}[2m]))",
+              "legendFormat": "{{instance}}"
+            }
+          ]
+        }
+      ]
+    }

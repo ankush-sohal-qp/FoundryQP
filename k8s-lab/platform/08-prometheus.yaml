@@ -1,0 +1,196 @@
+# Prometheus — scrapes metrics from the cluster and from the synthetic-data app.
+# Runs INSIDE the cluster (not Grafana Cloud) — self-hosted monitoring, the "we monitor our own infra" point.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+# RBAC: Prometheus needs to read pods/nodes/endpoints across the cluster to discover what to scrape.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
+---
+# The scrape config.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      # 1) Kubernetes nodes (kubelet) — node CPU/mem/pod stats
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+
+      # 2) cAdvisor — per-container CPU/memory (this powers pod resource graphs)
+      - job_name: 'kubernetes-cadvisor'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        metrics_path: /metrics/cadvisor
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+
+      # 3) The synthetic-data app — its own /metrics (Prometheus client in NestJS)
+      - job_name: 'synthetic-data-app'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['synthetic-data']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: synthetic-data
+          - source_labels: [__address__]
+            action: replace
+            regex: ([^:]+)(?::\d+)?
+            replacement: $1:3001
+            target_label: __address__
+        metrics_path: /synthetic-data/api/metrics
+---
+# Durable storage for the Prometheus TSDB — without this the metrics history lived on the pod's
+# ephemeral layer and was lost on every restart. Uses the cluster's default StorageClass
+# (minikube-hostpath here). 5Gi pairs with the 7d retention cap set on the Deployment args.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-tsdb
+  namespace: monitoring
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  # Recreate (not RollingUpdate): a ReadWriteOnce PVC can't attach to old+new pods at once.
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      # Pod-level security: run as nobody (65534, the image's own user). fsGroup is set, but minikube's
+      # hostpath provisioner doesn't reliably chown the volume to fsGroup — so the initContainer below
+      # fixes ownership explicitly. seccomp = baseline syscall filter.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      # Make the freshly-provisioned PVC writable by uid 65534. Runs as root ONCE before Prometheus
+      # starts (chown needs root); the main container then runs unprivileged as 65534.
+      initContainers:
+        - name: chown-tsdb
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 65534:65534 /prometheus"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - name: tsdb
+              mountPath: /prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d   # cap on-disk history so the PVC can't grow unbounded
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: tsdb
+              mountPath: /prometheus       # <-- now PERSISTENT: TSDB survives pod restarts (was ephemeral)
+          # Container-level hardening — no privilege escalation, no extra Linux capabilities.
+          # (readOnlyRootFilesystem is NOT set: Prometheus writes its TSDB; /prometheus is a separate
+          #  writable PVC, but the image also touches a few paths under / at startup.)
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: tsdb
+          persistentVolumeClaim:
+            claimName: prometheus-tsdb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090

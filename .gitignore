@@ -1,0 +1,26 @@
+# ── Secrets / credentials (NEVER commit) ───────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+*.tfvars
+!*.tfvars.example
+
+# OCI / cloud auth material
+.oci/
+*.pem
+*.key
+*-kubeconfig
+kubeconfig
+
+# ── Local / generated ──────────────────────────────────────────────────
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Terraform state (may contain secrets)
+*.tfstate
+*.tfstate.*
+.terraform/

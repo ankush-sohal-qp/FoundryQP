@@ -1,0 +1,11 @@
+# Namespace — one app-team's isolated "apartment" on the shared platform.
+# TEMPLATE: synthetic-data and data-team are filled in by new-app.sh. Never edit the generated copy;
+# edit THIS template so every app stays consistent.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synthetic-data
+  labels:
+    team: data-team
+    tier: backend
+    managed-by: platform        # marks this as platform-generated, not hand-rolled

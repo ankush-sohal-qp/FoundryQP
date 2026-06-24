@@ -1,0 +1,31 @@
+# A deliberately memory-hungry pod with a HARD 64Mi limit.
+# It allocates more than 64Mi → the kernel OOM-kills it → K8s restarts it (CrashLoop/OOMKilled).
+# Purpose: prove blast-radius isolation — THIS pod dies repeatedly, but synthetic-data + Postgres
+# on the same node are UNTOUCHED. One app exhausting memory can't take down its neighbours.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-hog
+  namespace: synthetic-data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-hog
+  template:
+    metadata:
+      labels:
+        app: memory-hog
+    spec:
+      containers:
+        - name: hog
+          image: polinux/stress
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 50m
+            limits:
+              memory: 64Mi          # hard cap — exceed this and the kernel kills it
+              cpu: 100m
+          command: ["stress"]
+          args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "0"]   # try to grab 150M > 64Mi limit

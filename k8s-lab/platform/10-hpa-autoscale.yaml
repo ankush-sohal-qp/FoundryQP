@@ -1,0 +1,42 @@
+# HorizontalPodAutoscaler for synthetic-data — the platform's autonomy: scale on CPU, no human.
+#
+# This is the REAL autoscaler (platform). The load generator that used to live in this file is a
+# DEMO prop and now lives in ../demos/loadgen.yaml — apply that only when you want to trigger a
+# scale event live (e.g. on Grafana). In production there is no loadgen; real traffic drives the HPA.
+#
+# SCALE-UP:   avg CPU > 50% of request (150m) -> add up to 4 pods / 15s, no stabilization delay (snappy).
+# SCALE-DOWN: 30s stabilization here for a watchable demo. PRODUCTION should keep the 300s/5min default
+#             to avoid thrashing on brief dips — raise stabilizationWindowSeconds before going live.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: synthetic-data
+  namespace: synthetic-data
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: synthetic-data
+  minReplicas: 2
+  maxReplicas: 4        # raise for production capacity; kept low here for the laptop/PoC
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50      # % of the pod's CPU request (150m)
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0    # react immediately to rising load
+      policies:
+        - type: Pods
+          value: 4                     # may add up to 4 pods per 15s — snappy ramp
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 30   # demo value; production: 300 (5min) to avoid thrashing
+      policies:
+        - type: Pods
+          value: 2                     # remove up to 2 pods per 15s
+          periodSeconds: 15

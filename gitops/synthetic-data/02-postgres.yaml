@@ -1,0 +1,84 @@
+# Postgres (pgvector) for synthetic-data.
+# StatefulSet because a DB is a PET: stable identity + stable storage (PVC survives pod restarts).
+# Creds come from the `postgres-creds` Secret created out-of-band via kubectl (NOT in git).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres            # app connects via this DNS name: DATABASE_DEFAULT_HOST=postgres
+  namespace: synthetic-data
+spec:
+  clusterIP: None           # headless — stable identity for the StatefulSet
+  selector:
+    app: postgres
+  ports:
+    - port: 5433
+      targetPort: 5433
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: synthetic-data
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: docker.io/pgvector/pgvector:pg17
+          args: ["postgres", "-c", "shared_preload_libraries=vector", "-p", "5433"]
+          ports:
+            - containerPort: 5433
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_DB
+            - name: PGPORT
+              value: "5433"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            # env-driven so it matches whatever creds the Secret holds (no hardcoded user/db).
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -p 5433"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: oci-bv     # OKE block volume (encrypted, survives node loss)
+        resources:
+          requests:
+            storage: 2Gi
