@@ -1,18 +1,18 @@
 # Namespace — one app-team's isolated "apartment" on the shared platform.
-# TEMPLATE: {{APP_NAME}} and {{TEAM}} are filled in by new-app.sh. Never edit the generated copy;
+# TEMPLATE: synthetic-data-backend and data-team are filled in by new-app.sh. Never edit the generated copy;
 # edit THIS template so every app stays consistent.
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{APP_NAME}}
+  name: synthetic-data-backend
   labels:
-    team: {{TEAM}}
+    team: data-team
     tier: backend
     managed-by: platform        # marks this as platform-generated, not hand-rolled
     # Pod Security Admission — native, no controller. ENFORCE 'restricted' by default so a
     # rootful/privileged/no-limits pod is REJECTED at admission, not just discouraged by the
     # template. This is what turns the paved road from advice into a guardrail. Apps that
     # genuinely need root (legacy images) lower THEIR OWN namespace to 'baseline' explicitly.
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/warn: restricted

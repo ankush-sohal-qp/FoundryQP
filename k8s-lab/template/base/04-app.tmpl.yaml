@@ -85,10 +85,12 @@ metadata:
     oci.oraclecloud.com/load-balancer-type: "nlb"
     # let OKE's CCM auto-write the worker-subnet security rules (None => you hand-maintain, error-prone)
     oci-network-load-balancer.oraclecloud.com/security-list-management-mode: "All"
-    # fast failure detection on VM death — dead backend evicted in ~2-3s (defaults take ~30s)
-    oci-network-load-balancer.oraclecloud.com/health-check-interval: "1000"   # ms (1000 = NLB minimum)
-    oci-network-load-balancer.oraclecloud.com/health-check-timeout: "1000"    # ms
-    oci-network-load-balancer.oraclecloud.com/health-check-retries: "2"       # 2 fails => out in ~2-3s
+    # NLB health-check: interval MIN is 10000ms (10s) — OCI rejects anything lower. The real
+    # zero-downtime-on-VM-death win comes from externalTrafficPolicy: Local below (pod-aware
+    # backends), NOT from a fast health-check interval. Keep retries low to evict a dead node sooner.
+    oci-network-load-balancer.oraclecloud.com/health-check-interval: "10000"   # ms (NLB minimum)
+    oci-network-load-balancer.oraclecloud.com/health-check-timeout: "3000"    # ms
+    oci-network-load-balancer.oraclecloud.com/health-check-retries: "2"       # consecutive fails => unhealthy
 spec:
   type: {{SERVICE_TYPE}}
   selector:

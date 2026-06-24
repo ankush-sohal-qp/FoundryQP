@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis             # app connects via this DNS name: REDIS_HOST=redis
-  namespace: synthetic-data
+  namespace: synthetic-data-backend
 spec:
   selector:
     app: redis
@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: synthetic-data
+  namespace: synthetic-data-backend
 spec:
   replicas: 1
   selector:

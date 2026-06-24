@@ -29,7 +29,7 @@ spec:
               app: audience-backend
       containers:
         - name: app
-          image: bom.ocir.io/bmpasgoonhpi/audience:v1
+          image: bom.ocir.io/bm7gzqslzqdh/audience:v1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

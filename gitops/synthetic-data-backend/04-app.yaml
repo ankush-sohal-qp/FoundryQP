@@ -1,23 +1,23 @@
-# synthetic-data — the app-team's actual deliverable: image + config. Everything else is platform.
+# synthetic-data-backend — the app-team's actual deliverable: image + config. Everything else is platform.
 # TEMPLATE: filled by new-app.sh. The app-team only ever supplies these few values:
 #   APP_NAME, IMAGE, PORT, REPLICAS, CPU_REQUEST, MEM_REQUEST, INGRESS_HOST.
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: synthetic-data
-  namespace: synthetic-data
+  name: synthetic-data-backend
+  namespace: synthetic-data-backend
   labels:
-    app: synthetic-data
+    app: synthetic-data-backend
 spec:
   replicas: 2                # >=2 in prod (node-level HA + something for HPA to scale)
   selector:
     matchLabels:
-      app: synthetic-data
+      app: synthetic-data-backend
   template:
     metadata:
       labels:
-        app: synthetic-data
+        app: synthetic-data-backend
     spec:
       # Pull secret for private OCIR images. new-app.sh leaves this commented when the image
       # is public; uncomments + fills it when --pull-secret is given (created out-of-band, B-plan).
@@ -30,10 +30,10 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
-              app: synthetic-data
+              app: synthetic-data-backend
       containers:
         - name: app
-          image: bom.ocir.io/bmpasgoonhpi/synthetic-data:v1
+          image: bom.ocir.io/bm7gzqslzqdh/synthetic-data:v1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3001
@@ -47,7 +47,7 @@ spec:
               type: RuntimeDefault
           envFrom:
             - secretRef:
-                name: synthetic-data-env       # all config/secrets injected from this Secret
+                name: synthetic-data-backend-env       # all config/secrets injected from this Secret
           # readiness: gates traffic — only Ready when the app's own health endpoint passes (incl. DB).
           readinessProbe:
             httpGet:
@@ -77,8 +77,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: synthetic-data
-  namespace: synthetic-data
+  name: synthetic-data-backend
+  namespace: synthetic-data-backend
   # SERVICE_TYPE=LoadBalancer => these OCI NLB annotations + externalTrafficPolicy: Local apply
   # (direct public NLB, zero-downtime-on-VM-death, like synthetic-data). SERVICE_TYPE=ClusterIP
   # => the annotations are inert and the app is reached via the shared nginx Ingress below.
@@ -86,14 +86,16 @@ metadata:
     oci.oraclecloud.com/load-balancer-type: "nlb"
     # let OKE's CCM auto-write the worker-subnet security rules (None => you hand-maintain, error-prone)
     oci-network-load-balancer.oraclecloud.com/security-list-management-mode: "All"
-    # fast failure detection on VM death — dead backend evicted in ~2-3s (defaults take ~30s)
-    oci-network-load-balancer.oraclecloud.com/health-check-interval: "1000"   # ms (1000 = NLB minimum)
-    oci-network-load-balancer.oraclecloud.com/health-check-timeout: "1000"    # ms
-    oci-network-load-balancer.oraclecloud.com/health-check-retries: "2"       # 2 fails => out in ~2-3s
+    # NLB health-check: interval MIN is 10000ms (10s) — OCI rejects anything lower. The real
+    # zero-downtime-on-VM-death win comes from externalTrafficPolicy: Local below (pod-aware
+    # backends), NOT from a fast health-check interval. Keep retries low to evict a dead node sooner.
+    oci-network-load-balancer.oraclecloud.com/health-check-interval: "10000"   # ms (NLB minimum)
+    oci-network-load-balancer.oraclecloud.com/health-check-timeout: "3000"    # ms
+    oci-network-load-balancer.oraclecloud.com/health-check-retries: "2"       # consecutive fails => unhealthy
 spec:
   type: LoadBalancer
   selector:
-    app: synthetic-data
+    app: synthetic-data-backend
   # Local => traffic only to nodes running a pod, probes pod readiness (not node-wide :10256) =>
   # near zero-downtime on VM death. new-app.sh sets this only for SERVICE_TYPE=LoadBalancer
   # (it is INVALID on a ClusterIP Service).

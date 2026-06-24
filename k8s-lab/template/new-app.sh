@@ -5,7 +5,7 @@
 #   ./new-app.sh <app-name> <team> <image> [replicas] [port] [cpu_req] [mem_req] [ingress_host]
 #
 # Example:
-#   ./new-app.sh audience-backend audience-team bom.ocir.io/bmpasgoonhpi/audience:v1 3 3000 200m 512Mi audience.test
+#   ./new-app.sh audience-backend audience-team bom.ocir.io/bm7gzqslzqdh/audience:v1 3 3000 200m 512Mi audience.test
 #
 # Output: template/apps/<app-name>/*.yaml  (ready to `kubectl apply -f`)
 # This is the ONLY thing an app-team runs to onboard. No hand-editing 18 places, no missed guardrail.

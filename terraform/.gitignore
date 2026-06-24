@@ -1,0 +1,10 @@
+# Terraform state can contain secrets + resource IDs — NEVER commit it.
+# (Production uses a remote backend: OCI Object Storage / Terraform Cloud, with locking.)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+*.tfvars        # may hold env-specific secrets; commit a .tfvars.example instead
+override.tf
+override.tf.json

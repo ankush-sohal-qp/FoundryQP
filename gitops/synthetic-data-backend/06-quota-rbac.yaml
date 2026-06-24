@@ -1,4 +1,4 @@
-# Self-service guardrails for synthetic-data's namespace.
+# Self-service guardrails for synthetic-data-backend's namespace.
 # ResourceQuota = hard cap (one team can't starve the cluster). LimitRange = per-pod defaults.
 # Role + RoleBinding = the team manages THEIR namespace, nothing else.
 # TEMPLATE: filled by new-app.sh. 150m/256Mi come from the app's sizing.
@@ -6,8 +6,8 @@
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: synthetic-data-quota
-  namespace: synthetic-data
+  name: synthetic-data-backend-quota
+  namespace: synthetic-data-backend
 spec:
   hard:
     requests.cpu: "2"        # total CPU this namespace may request
@@ -19,8 +19,8 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: synthetic-data-limits
-  namespace: synthetic-data
+  name: synthetic-data-backend-limits
+  namespace: synthetic-data-backend
 spec:
   limits:
     - type: Container
@@ -34,8 +34,8 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: synthetic-data-developer
-  namespace: synthetic-data
+  name: synthetic-data-backend-developer
+  namespace: synthetic-data-backend
 rules:
   - apiGroups: ["", "apps", "batch", "networking.k8s.io"]
     resources:
@@ -48,13 +48,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: synthetic-data-team-binding
-  namespace: synthetic-data
+  name: synthetic-data-backend-team-binding
+  namespace: synthetic-data-backend
 subjects:
   - kind: Group
     name: data-team                            # whoever is in this group gets developer access, scoped to this ns
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: Role
-  name: synthetic-data-developer
+  name: synthetic-data-backend-developer
   apiGroup: rbac.authorization.k8s.io

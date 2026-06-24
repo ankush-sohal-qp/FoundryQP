@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (gitignored) and fill. These are the only per-environment values.
+# terraform.tfvars itself is NOT committed — it can carry account-specific OCIDs.
+
+tenancy_id     = "ocid1.tenancy.oc1..xxxxx"
+# Best practice: a DEDICATED compartment, not the root tenancy (blast-radius + IAM scoping).
+# Either create one in the console / via `compartment.tf`, or — PoC-only — set this to the
+# tenancy OCID to build in root.
+compartment_id = "ocid1.compartment.oc1..xxxxx"
+
+region              = "ap-mumbai-1"
+config_file_profile = "oktest6"
+kubernetes_version  = "v1.34.1"
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
