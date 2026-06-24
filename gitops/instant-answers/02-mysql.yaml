@@ -25,7 +25,9 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: mysql:8.0
+          # FULLY-QUALIFIED name required: OKE worker nodes (cri-o) enforce short-name mode, so a
+          # bare "mysql:8.0" is rejected as ambiguous. Always prefix the registry for public images.
+          image: docker.io/library/mysql:8.0
           # mysql:8 boots as root and chowns /var/lib/mysql — needs default caps, so NO drop:ALL
           # here. Allowed under this namespace's 'baseline' Pod Security level.
           args: ["--default-authentication-plugin=mysql_native_password"]
