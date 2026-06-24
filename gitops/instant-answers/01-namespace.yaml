@@ -1,0 +1,19 @@
+# Namespace — one app-team's isolated "apartment" on the shared platform.
+# TEMPLATE: instant-answers and instant-answers-team are filled in by new-app.sh. Never edit the generated copy;
+# edit THIS template so every app stays consistent.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: instant-answers
+  labels:
+    team: instant-answers-team
+    tier: backend
+    managed-by: platform        # marks this as platform-generated, not hand-rolled
+    # Pod Security Admission — native, no controller. The platform default is 'restricted', but
+    # the instant-answers image (node:20-alpine) currently runs as root and restricted REQUIRES
+    # runAsNonRoot. Per the template's own escape-hatch, a legacy/root image lowers ITS OWN
+    # namespace to 'baseline' explicitly (still blocks privileged/hostNetwork/hostPID etc).
+    # Roadmap: rebuild the image non-root (USER node + chown) and raise this back to 'restricted'.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: baseline

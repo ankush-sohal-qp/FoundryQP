@@ -1,0 +1,25 @@
+# NetworkPolicy = a firewall in front of pods. Without it, ANY pod in the cluster can reach the DB.
+# Locks MySQL so ONLY instant-answers app pods can connect on 3306.
+# K8s equivalent of "DB on a private subnet, only the app tier may talk to it."
+# (instant-answers uses MySQL, not the platform's Postgres/Redis — so the golden template's
+# postgres/redis policies were replaced with this MySQL one.)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mysql-allow-app-only
+  namespace: instant-answers
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: instant-answers      # only this app's pods allowed in
+      ports:
+        - protocol: TCP
+          port: 3306

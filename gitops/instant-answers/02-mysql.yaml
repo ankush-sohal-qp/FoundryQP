@@ -1,0 +1,75 @@
+# MySQL for instant-answers — app-scoped stateful dependency, lives in the app's own namespace.
+# NOT a platform service (the shared platform runs Postgres/Redis; this app needs MySQL specifically).
+# Demo-grade: emptyDir storage (data is ephemeral, fine for a platform demo). Roadmap: a PVC +
+# StatefulSet for durable storage. Root password + DB name are sourced from the SAME
+# instant-answers-env Secret the app reads, so there is one source of truth for the credentials.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: instant-answers
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # never two MySQLs on one emptyDir volume
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          # mysql:8 boots as root and chowns /var/lib/mysql — needs default caps, so NO drop:ALL
+          # here. Allowed under this namespace's 'baseline' Pod Security level.
+          args: ["--default-authentication-plugin=mysql_native_password"]
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: instant-answers-env
+                  key: MYSQL_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: instant-answers-env
+                  key: MYSQL_DATABASE
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: instant-answers
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
