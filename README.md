@@ -26,16 +26,11 @@ No `kubectl`. No manual steps. No "it works on my machine."
 
 ## This isn't a slide. It's running.
 
-A real app — `instant-answers` — is live on the cluster right now, deployed entirely through
-this flow, talking to its own database:
-
-| What | Where |
-|---|---|
-| App (returns real DB data) | http://144.24.120.158/metadata |
-| Health check | http://144.24.120.158/healthcheck |
-| ArgoCD dashboard (see the magic) | http://argocd.144.24.120.158.nip.io |
-
-Open the first link — that JSON is coming straight out of MySQL inside the cluster.
+A real app — `instant-answers` — is already live on the cluster, deployed entirely through this
+flow and talking to its own database. Not a mockup, not a diagram — an actual workload you can
+hit over HTTP, watch in the ArgoCD dashboard, and scale up or down. The live endpoints aren't
+hardcoded here (they move with the environment) — grab the current ones from the platform team
+or the ArgoCD dashboard.
 
 ---
 
