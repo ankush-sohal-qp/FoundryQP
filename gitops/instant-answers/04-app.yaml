@@ -118,8 +118,9 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: instant-answers.test
-      http:
+    # host-agnostic: match any Host (incl. the raw LB IP) so the app is browsable at
+    # http://<LB-IP>/ directly, no /etc/hosts entry or Host header needed for the demo.
+    - http:
         paths:
           - path: /
             pathType: Prefix
